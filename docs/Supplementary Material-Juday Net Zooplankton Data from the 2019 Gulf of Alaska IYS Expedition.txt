@@ -1,0 +1,54 @@
+Protocols for Juday Net Zooplankton Data from the 2019 Gulf of Alaska International Year of the Salmon Expedition
+
+
+Russian Protocol (to comply with historical Russian collections)
+
+Zooplankton is sampled using the Juday net with mouth area 0.1 m2 and filtering mesh size 0.168 mm. Vertical tows 0-200 m and 0-50 m are conducted at every station. The net is towed at a speed ~1 m.sec-1. Samples will be processed on board following the express methodology developed by A.F. Volkov (2008). Zooplankton will be processed to the major taxonomic groups. In short, catch will be split into three (small (0.6 – 1.2 mm), intermediate (1.2 – 3.2 mm) and large (>3.2 mm), see Volkov, 2008) size fractions. In addition, the size faction 0.168-0.6 mm, will be collected but not analyzed at sea. Numerical abundance of small (e.g. nauplia, small copepods, juvenile Limacina helicina, copepod and euphausiid eggs…) and intermediate (e.g. majority copepods, small euphausiids, amphipods, pteropods…) fractions will be determined in 1/8-1/16 subsample using the Bogorov chamber. The large fraction (decapods, euphausiids, amphipods, chaetognaths…) will be counted entirely. All processed samples will be preserved in formalin solution.
+
+Volume filtered will be calculated using flowmeter by multiplying effective distance travelled by the mouth area.
+
+To calculate abundance and biomass of zooplankton, numerical counts of all groups and sizes will be corrected for net avoidance using correction factors (for details see Volkov, 2008):
+
+Fraction						Correction factor
+Small zooplankton					1.5
+Intermediate zooplankton				2.0
+Large zooplankton:
+copepods up to 5 mm					2.0
+copepods > 5 mm					3.0
+eupahsuiids (+ mysids, small decapods)		2.0
+chaetognaths up to 10 mm				2.0
+chaetognaths 10 – 20 mm				5.0
+chaetognaths > 20 mm				10.0
+hyperiids up to 5 mm					1.5
+hyperiids 5-10 mm					3.0
+hyperiids > 10 mm					5.0
+
+
+Canadian Protocol (to comply with historical Canadian collections)	
+
+Zooplankton is sampled using 0.5 m2 Bongo net with mesh size 0.236 mm. It will be vertically towed from 250 m to the surface. Volume filtered will be determined using General Oceanics flowmeters by multiplying effective distance travelled by the mouth area. On board all rare (often large) organisms will be individually picked, identified, measured and preserved (either frozen or in formalin solution). Individual Bongo net samples will be split (net 1: A+B; net 2: C+D, see below) and:
+(A) ½ of the sample will be preserved in buffered formalin solution.
+(B) ½ of the sample will be size fractionated using a series of sieves with mesh sizes 0.125, 0.250, 0.500, 1, 2, 4 and 8 mm. The last two sizes fractions will likely be counted and measured entirely by species/taxa.
+(C) ½ of the sample will be size fractionated as above and frozen by size fraction.
+(D) ½ of the sample will be preserved in ethanol.
+
+(B) samples after size fractionation will be rinsed, placed into a pre-weighed petri dishes and over dried at 50oC for 24-48 hours. They will be stored in -20oC afterwards. These samples will be used to estimate dry mass of zooplankton and subsequently used for stable isotope analyses.
+
+(D) samples will only be collected at every 5th station or so (it will be decided at sea) and on other stations preserved as (A) samples.
+
+Equipment
+ 
+•	Juday net
+•	Bogorov chamber
+•	Formalin solution
+•	250mL PET jars
+•	Flowmeter
+•	Bongo net
+•	Petri dishes
+ 
+
+Onboard Infrastructure Requirements
+•	Low temperature oven or -20°C freezer
+
+
+
