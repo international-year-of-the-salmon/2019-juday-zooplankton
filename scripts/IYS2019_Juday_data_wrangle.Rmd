@@ -1,0 +1,410 @@
+---
+title: "Juday Zooplankton Data Wrangle"
+author: "Tim van der Stap"
+date: "1/16/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+library(worrms)
+library(obistools)
+library(readxl)
+library(here)
+library(parsedate)
+library(googledrive)
+```
+
+## Getting started
+
+The following line only needs to be run once to download the required data sheets from Google Drive to your computer's hard drive.  
+
+```{r drive_download}
+drive_download("https://docs.google.com/spreadsheets/d/1GAZ3tsnLpbW9J_rxOkd_awmjA_F2FAZ0/edit#gid=1075400856",
+               path = here("Juday", "raw_data", "IYS2019_Juday_WF.xlsx"), overwrite = TRUE)
+```
+
+This file contains the finalized data for the zooplankton collected during the 2019 IYS Expedition with a Juday Net. The original data file (`Raw zooplankton data 200 m 2019)` can be found [here](https://docs.google.com/spreadsheets/d/1sB72X6Yudu3xeDuWsk5nMgKhpKhbJGy1/edit#gid=2080169580) and has been translated and verified by Evgeny Pakhomov (UBC). The `IYS2019_Juday_WF.xlsx` file contains the raw data in two different sheets. The first sheet contains the metadata associated with each sampling event, and most of this information can be found in the Event Core (eg. date, time, coordinates, sampling depth). The second sheet ('Species') contains the taxa observed, their count (per volume), mass (per volume) and the coefficient-corrected values. These observations have been classified based on fraction size (small, medium, large).
+
+Any changes from the original file (`Raw zooplankton data 200 m 2019_translated.xlsx`) to the working file (`IYS2019_Juday_WF.xlsx`) have been recorded in a changelog (`Juday_Changelog.Rmd`). 
+
+We see in the data file that prior to the IYS Expedition, there were 33 other stations sampled that were not part of the IYS grid surveyed. These have to be filtered out, and then the station numbers have to be changed to reflect 1 - 60, in order to be able to compare with other data sets. 
+
+``` {r zoopl_juday, eval = FALSE}
+juday <- read_excel(here("Juday", "raw_data", "IYS2019_Juday_WF.xlsx"), sheet = "Metadata") %>%
+  filter(waterBody == "Alaska") %>%
+  mutate(Station = 1:60,
+         Time = format(Start_time, "%H:%M:%S"),
+         eventDate = format_iso_8601(as.POSIXct(paste(Date, Time),
+                                                format = "%Y-%m-%d %H:%M:%S",
+                                                tz = "Asia/Kamchatka")),
+         eventDate = str_replace(eventDate, "\\+00:00", "Z")) %>%
+  mutate(project = "IYS",
+         cruise = paste(project, "GoA2019", sep = ":"),
+         station = paste(cruise, Station, sep = ":Stn"),
+         cast = paste(station, "juday", sep = ":")) 
+
+juday$year <- as.numeric(format(as.Date(juday$eventDate), "%Y"))
+juday$month <- as.numeric(format(as.Date(juday$eventDate), "%m"))
+juday$day <- as.numeric(format(as.Date(juday$eventDate), "%d"))
+```
+
+## Create the Event core - Summarized Juday data
+
+In the Event Core we include the different metadata information pertaining to the various levels. We need to ensure that the longitude falls within the range of -180 to 180 (inclusive). The `Sampling layer` column reflects the depth at which the samples were taken. 
+
+``` {r juday_event, eval = FALSE}
+juday_cast <- juday %>%
+  select(eventID = cast,
+         eventDate,
+         year,
+         month,
+         day,
+         decimalLatitude = Longitude_DecDeg,
+         decimalLongitude = Latitude_DecDeg,
+         maximumDepthInMeters = Sampling_depth) %>%
+  mutate(minimumDepthInMeters = 0,
+         decimalLongitude = -decimalLongitude) %>%
+  distinct(eventID, .keep_all = TRUE) 
+
+juday_cast <- juday_cast %>%
+         mutate(footprintWKT = paste("POINT"," (", juday_cast$decimalLongitude, " ", 
+                                     juday_cast$decimalLatitude, ")"))
+
+coordinates <- obistools::calculate_centroid(juday_cast$footprintWKT) %>% select(coordinateUncertaintyInMeters)
+juday2019_event <- cbind(juday_cast, coordinates) %>% mutate(geodeticDatum = "WGS84")
+
+# Make sure the folder path exists already (e.g. ./Salmon Diet/tidy_data)
+write_csv(juday2019_event, here("Juday", "tidy_data", "juday2019_event.csv"))
+```
+
+Always good to check the station coordinates. To visualize the sampling stations in a map:
+
+``` {r juday_visualizations, eval = FALSE}
+juday_leaflet <- obistools::plot_map_leaflet(juday_event_summary)
+juday_map <- obistools::plot_map(juday_event_summary, zoom = TRUE)
+```
+
+Looking at the sampling stations in the map, it seems there is 1 station for which the coordinates might be off, or would need to be confirmed. 
+
+- [ ] See which station coordinates seem off. 
+
+## Occurrence Extension 2019 Juday Data
+
+The Occurrence extension for the 2019 Juday Zooplankton data comes from the 'Species' sheet. We will filter only for those species who have a mass_per_volume_corrected > 0, _and_ count_per_volume_corrected > 0. Additionally, the original data includes Juday zooplankton data collected at stations that were not included in the IYS grid. Therefore, we filter for any Station >= 34.
+
+- [ ] Fix Station numbers, easier fix? 
+
+``` {r summary_juday_occ, eval = FALSE}
+juday_occ_spp <- read_excel(here("Juday", "raw_data", "IYS2019_Juday_WF.xlsx"), sheet = "Species") %>%
+  filter(Station >= 34) %>%
+  mutate(Station = case_when(
+    Station == "34" ~ "1",
+    Station == "35" ~ "2",
+    Station == "36" ~ "3",
+    Station == "37" ~ "4",
+    Station == "38" ~ "5",
+    Station == "39" ~ "6",
+    Station == "40" ~ "7",
+    Station == "41" ~ "8",
+    Station == "42" ~ "9",
+    Station == "43" ~ "10",
+    Station == "44" ~ "11",
+    Station == "45" ~ "12",
+    Station == "46" ~ "13",
+    Station == "47" ~ "14",
+    Station == "48" ~ "15",
+    Station == "49" ~ "16",
+    Station == "50" ~ "17",
+    Station == "51" ~ "18",
+    Station == "52" ~ "19",
+    Station == "53" ~ "20",
+    Station == "54" ~ "21",
+    Station == "55" ~ "22",
+    Station == "56" ~ "23",
+    Station == "57" ~ "24",
+    Station == "58" ~ "25",
+    Station == "59" ~ "26",
+    Station == "60" ~ "27",
+    Station == "61" ~ "28",
+    Station == "62" ~ "29",
+    Station == "63" ~ "30",
+    Station == "64" ~ "31",
+    Station == "65" ~ "32",
+    Station == "66" ~ "33",
+    Station == "67" ~ "34",
+    Station == "68" ~ "35",
+    Station == "69" ~ "36",
+    Station == "70" ~ "37",
+    Station == "71" ~ "38",
+    Station == "72" ~ "39",
+    Station == "73" ~ "40",
+    Station == "74" ~ "41",
+    Station == "75" ~ "42",
+    Station == "76" ~ "43",
+    Station == "77" ~ "44",
+    Station == "78" ~ "45",
+    Station == "79" ~ "46",
+    Station == "80" ~ "47",
+    Station == "81" ~ "48",
+    Station == "82" ~ "49",
+    Station == "83" ~ "50",
+    Station == "84" ~ "51",
+    Station == "85" ~ "52",
+    Station == "86" ~ "53",
+    Station == "87" ~ "54",
+    Station == "88" ~ "55",
+    Station == "89" ~ "56",
+    Station == "90" ~ "57",
+    Station == "91" ~ "58",
+    Station == "92" ~ "59",
+    Station == "93" ~ "60")) %>%
+  filter(mass_per_cubic_meter_corr > 0.00 & ind_per_cubic_meter_corr > 0.00) %>%
+  mutate(project = "IYS",
+         cruise = paste(project, "GoA2019", sep = ":"),
+         station = paste(cruise, Station, sep = ":Stn"),
+         cast = paste(station, "juday", sep = ":")) %>%
+  rename(eventID = cast)
+
+unique_taxa <- unique(juday_occ_spp$Species)
+worms_check <- obistools::match_taxa(unique_taxa)
+```
+
+There are a few taxa recorded that can't get matched with the WoRMS database. These have to be changed. We opt to make these changes in the script rather than in the original data file, as hopefully this makes it easier for data users to understand what changes have been made, and for data provider(s) to verify them.
+
+``` {r, eval = FALSE}
+juday2019_scientificnames <- worrms::wm_records_names(unique(juday_occ_spp$Species)) %>% dplyr::bind_rows() 
+
+# There are a few species that could not be matched to a URI in the WoRMS database, due to spelling errors, abbreviations or inclusion of lifestage in their name. Some Species have special characters (eg. brackets) in the name which first have to be removed. These taxa names are changed in the juday_occ_spp dataframe below: 
+
+juday_occ_spp <- juday_occ_spp %>%
+  mutate(identificationQualifier = ifelse(grepl("sp.", juday_occ_spp$Species), "sp. indet", ""))
+juday_occ_spp$Species <- gsub("\\b sp.\\b", "", juday_occ_spp$Species)
+
+juday_occ_spp$Species <- gsub("[[:punct:]]", "", juday_occ_spp$Species)
+
+juday_occ_spp$Species <- gsub("Copepoda 12", "Copepoda", juday_occ_spp$Species)
+juday_occ_spp$Species <- gsub("Copepoda Neocalanus", "Neocalanus", juday_occ_spp$Species)
+juday_occ_spp$Species <- gsub("Lucicucia", "Lucicutia", juday_occ_spp$Species)
+juday_occ_spp$Species <- gsub("Sagitella  ", "Sagitella", juday_occ_spp$Species)
+juday_occ_spp$Species <- gsub("Tessarobrachion oculatum", "Tessarabrachion oculatum", juday_occ_spp$Species)
+juday_occ_spp$Species <- gsub("Pareuchaeta japonica", "Paraeuchaeta japonica", juday_occ_spp$Species)
+juday_occ_spp$Species <- gsub("Pleurommama abdom", "Pleuromamma abdominalis", juday_occ_spp$Species)
+juday_occ_spp$Species <- gsub("Pleurommama xiphias", "Pleuromamma xiphias", juday_occ_spp$Species)
+juday_occ_spp$Species <- gsub("Scafocalanus", "Scaphocalanus", juday_occ_spp$Species)
+juday_occ_spp$Species <- gsub("Thysanoessa raschii ", "Thysanoessa raschii", juday_occ_spp$Species)
+juday_occ_spp$Species <- gsub("Euchirela", "Euchirella", juday_occ_spp$Species)
+juday_occ_spp$Species <- gsub("Heterorabdus tanneri", "Heterorhabdus tanneri", juday_occ_spp$Species)
+juday_occ_spp$Species <- gsub("Cflocalanus pavo", "Calocalanus pavo", juday_occ_spp$Species)
+juday_occ_spp$Species <- gsub("Scolitricella", "Scolecithricella", juday_occ_spp$Species)
+juday_occ_spp$Species <- gsub("Oikopleura labrador", "Oikopleura (Vexillaria) labradoriensis", juday_occ_spp$Species)
+juday_occ_spp$Species <- gsub("Aetideus pacifica", "Aetideus pacificus", juday_occ_spp$Species)
+juday_occ_spp$Species <- gsub("Eukrochia hamata", "Eukrohnia hamata", juday_occ_spp$Species)
+juday_occ_spp$Species <- gsub("Clio piramidata Pteropoda", "Clio piramidata", juday_occ_spp$Species)
+juday_occ_spp$Species <- gsub("Th spinifera", "Thysanoessa spinifera", juday_occ_spp$Species)
+
+# Run wm_records_names function again to see if all unique_taxa (n=27) are represented. We notice that there are some duplicate scientific names in there, but with different AphiaIDs. After checking these manually, some are removed:
+
+juday2019_scientificnames <- worrms::wm_records_names(unique(juday_occ_spp$Species), marine_only = FALSE) %>% dplyr::bind_rows() %>%
+  filter(!AphiaID %in% c("254409", "1434994", "106331", "602637"))
+
+juday_occ_spp <- juday_occ_spp %>% rename(scientificname = Species) 
+juday_occ_spp <- left_join(juday_occ_spp, juday2019_scientificnames, by = "scientificname") %>%
+    mutate(occurrenceID = paste(eventID, "zoop_occ", sep = ":"),
+         occurrenceID = paste(occurrenceID, row_number(), sep = ":"),
+         occurrenceStatus = "present",
+         basisOfRecord = "PreservedSpecimen",
+         specificEpithet = stringr::word(juday_occ_spp$scientificname, 2))
+
+juday2019_occ <- juday_occ_spp %>%
+  select(eventID,
+         occurrenceID,
+         occurrenceStatus,
+         basisOfRecord,
+         scientificName = scientificname,
+         scientificNameID = lsid,
+         identificationQualifier,
+         lifeStage,
+         taxonRank = rank,
+         taxonomicStatus = status,
+         scientificNameAuthorship = authority,
+         kingdom, phylum, class, order, family, genus, specificEpithet)
+
+write_csv(juday2019_occ, here("Juday", "tidy_data", "juday2019_occ.csv"))
+
+drive_upload(here("Juday", "tidy_data", "juday2019_occ.csv"),
+             path = "https://drive.google.com/drive/u/0/folders/12JzOZyEONkrC_AL3wmXx3xjfQ81JkAo-",
+             name = "juday2019_occ.csv",
+             overwrite = TRUE)
+```
+
+## extended Measurement or Fact extension 
+
+In the follow chunk of code we add the measurements (corrected individual per volume, corrected mass per volume, and size (range)),  associated with each taxonomic observation. Additionally, measurements or facts related to the sampling (water volume sampled, bottom depth etc) are added also, but linked to the relevant eventID rather than occurrenceID. 
+develop
+
+``` {r summary_juday_emof, eval = FALSE}
+# First create a table with measurements related to the bottomdepth at sampling location. 
+juday_bottomdepth <- juday %>%
+  select(eventID = cast, 
+         Bottom_depth) %>%
+  distinct(eventID, .keep_all = TRUE) %>%
+  mutate_all(as.character) %>%
+  rename(measurementValue = Bottom_depth) %>%
+  mutate(measurementID = paste(eventID, "bottom_depth", sep = ":"),
+         measurementType = "bottom_depth",
+         measurementTypeID = "http://vocab.nerc.ac.uk/collection/C00/current/SCILOG/",
+         measurementUnit = "meter",
+         measurementUnitID = "http://vocab.nerc.ac.uk/collection/P06/current/ULAA/") %>%
+  select(eventID, measurementID, measurementType, measurementTypeID, measurementValue, 
+         measurementUnit, measurementUnitID)
+```
+
+As the measurements include biomass (wet weight) per volume, we need to provide the sampling effort (water volume filtered) and other facts related to the sampling instrument and method (mesh size, speed of tow etc), and associated with the cast. From the data I gather that the "cubic meters" is 20.0, which I assume is the volume filtered.
+
+feature/juday
+``` {r sampling_effort_juday_sampling, eval = FALSE}
+juday2019_samplingEffort <- juday %>%
+  select(eventID = cast,
+         Sampled_volume) %>%
+  distinct(eventID, .keep_all = T) %>%
+  mutate(mesh_size = 160,
+         net_opening = 0.1,
+         gear_type = "Juday Net",
+         tow_speed = "~1") %>%
+  mutate_all(as.character) %>%
+  pivot_longer(cols = Sampled_volume:tow_speed,
+               names_to = "measurementType",
+               values_to = "measurementValue") %>%
+  mutate(measurementID = paste(eventID, measurementType, sep = ":"),
+         measurementTypeID = case_when(
+           measurementType == "Sampled_volume" ~ "http://vocab.nerc.ac.uk/collection/P01/current/VOLWBSMP/",
+           measurementType == "mesh_size" ~ "http://vocab.nerc.ac.uk/collection/Q01/current/Q0100015/",
+           measurementType == "net_opening" ~ "http://vocab.nerc.ac.uk/collection/Q01/current/Q0100017/",
+           measurementType == "gear_type" ~ "http://vocab.nerc.ac.uk/collection/Q01/current/Q0100002/",
+           measurementType == "tow_speed" ~ "http://vocab.nerc.ac.uk/collection/P01/current/TOWSPEED/"),
+         measurementUnit = case_when(
+           measurementType == "Sampled_volume" ~ "cubic meter",
+           measurementType == "mesh_size" ~ "micrometer",
+           measurementType == "tow_speed" ~ "meter per second",
+           measurementType == "net_opening" ~ "square meter"),
+         measurementUnitID = case_when(
+           measurementUnit == "cubic meter" ~ "http://vocab.nerc.ac.uk/collection/P06/current/MCUB/",
+           measurementUnit == "micrometer" ~ "http://vocab.nerc.ac.uk/collection/P06/current/UMIC/",
+           measurementUnit == "square meter" ~ "http://vocab.nerc.ac.uk/collection/P06/current/UMSQ/",
+           measurementUnit == "meter per second" ~ "http://vocab.nerc.ac.uk/collection/P06/current/UVAA/"),
+         measurementValueID = case_when(
+           measurementValue == "Juday Net" ~ " ")) %>%
+    select(eventID, measurementID, measurementType, measurementTypeID, measurementValue, measurementValueID,
+         measurementUnit, measurementUnitID)
+```
+
+Next, create a measurement table for biomass measurements related to specific zooplankton groups. The measurements include: size (range), lifestage, count, mass per individual, mass per cubic meter, mass per cubic meter as corrected using the coefficient, individuals per cubic meter, individuals per cubic meter as corrected using the coefficient. 
+
+Wherever the size_mm is a range, we need to split this up into two columns: minimum length and maximum length. Additionally, if the size_mm contains either a < or > sign, we need to add the numeric value to either maximum length, or minimum length, respectively. 
+
+- TO DO: Figure out if and how to include the coefficient in the eMOF. 
+
+``` {r juday2019_emof, eval = FALSE}
+juday_emof_spp <- juday_occ_spp %>%
+  select(eventID, 
+         occurrenceID, 
+         size_mm,
+         lifeStage,
+         count,
+         coefficient,
+         mass_per_cubic_meter,
+         mass_per_cubic_meter_corr,
+         ind_per_cubic_meter,
+         ind_per_cubic_meter_corr)
+
+# Separate size ranges into two separate columns: length_minimum and length_maximum
+juday_emof_sizerange <- juday_emof_spp %>% 
+  filter(grepl("-", juday_emof_spp$size_mm)) %>%
+  separate(size_mm, c("length_minimum", "length_maximum"), sep = "-") %>%
+  mutate(size_mm = NA)
+
+# Create separate data frame of sizes that do not include a range: 
+juday_emof_sizefix <- juday_emof_spp %>%
+  filter(!grepl("-", juday_emof_spp$size_mm)) %>%
+  mutate(length_minimum = NA,
+         length_maximum = NA)
+
+# Join these tables: 
+juday2019_emof <- rbind(juday_emof_sizerange, juday_emof_sizefix)
+
+# Fiddling around with lengths, ranges and special characters:
+juday2019_emof$length_minimum <- gsub(",", ".", juday2019_emof$length_minimum)
+juday2019_emof$length_maximum <- gsub(",", ".", juday2019_emof$length_maximum)
+
+# Currently the size_mm contains values that include > or < characters. Eg. >10 would need to be recorded as: length_minimum = 10. The following lines of code ensure that the values that include > or < are entered in their correct respective column and that the value is removed from the size_mm column: 
+juday2019_emof$length_maximum <- ifelse(grepl("[<]", juday2019_emof$size_mm), 
+                                        juday2019_emof$size_mm, juday2019_emof$length_maximum)
+juday2019_emof$length_minimum <- ifelse(grepl("[<]", juday2019_emof$size_mm), NA, juday2019_emof$length_minimum)
+
+juday2019_emof$length_maximum <- ifelse(grepl("[>]", juday2019_emof$size_mm), NA, juday2019_emof$length_maximum)
+juday2019_emof$length_minimum <- ifelse(grepl("[>]", juday2019_emof$size_mm), juday2019_emof$size_mm, NA)
+
+juday2019_emof$length_maximum <- gsub("[<]", "", juday2019_emof$length_maximum)
+juday2019_emof$length_minimum <- gsub("[>]", "", juday2019_emof$length_minimum)
+juday2019_emof$size_mm <- ifelse(grepl("[<]|[>]", juday2019_emof$size_mm), NA, juday2019_emof$size_mm)
+
+# The 2019 Juday eMOF extension: 
+juday2019_emof <- juday2019_emof %>%
+  mutate_all(as.character) %>%
+  pivot_longer(cols = length_minimum:size_mm,
+               names_to = "measurementType",
+               values_to = "measurementValue") %>%
+  mutate(measurementID = paste(eventID, measurementType, sep = ":")) %>%
+  filter(!is.na(measurementValue))
+
+# As I don't believe there is controlled vocabulary for the 'coefficient' column, I think it's best to reword this column to provide better understanding for data users: 
+juday2019_emof$measurementType <- gsub("coefficient", "taxa-specific coefficient value used to determine the corrected individuals per cubic meter and mass per cubic meter", juday2019_emof$measurementType)
+
+# The other columns get controlled vocab assigned:
+juday2019_emof <- juday2019_emof %>%
+  mutate(measurementTypeID = case_when(
+    measurementType == "length_minimum" ~ "http://vocab.nerc.ac.uk/collection/P01/current/OBSMINLX/",
+    measurementType == "length_maximum" ~ "http://vocab.nerc.ac.uk/collection/P01/current/OBSMAXLX/",
+    measurementType == "count" ~ "http://vocab.nerc.ac.uk/collection/P01/current/OCOUNT01/",
+    measurementType == "lifeStage" ~ "http://vocab.nerc.ac.uk/collection/P01/current/LSTAGE01/",
+    measurementType == "mass_per_cubic_meter" ~ "http://vocab.nerc.ac.uk/collection/P01/current/SDBIOL04/",
+    measurementType == "mass_per_cubic_meter_corr" ~ "http://vocab.nerc.ac.uk/collection/P01/current/SDBIOL04/",
+    measurementType == "ind_per_cubic_meter" ~ "http://vocab.nerc.ac.uk/collection/P01/current/SDBIOL01/",
+    measurementType == "ind_per_cubic_meter_corr" ~ "http://vocab.nerc.ac.uk/collection/P01/current/SDBIOL01/"),
+         measurementUnit = case_when(
+           measurementType %in% c("length_minimum", "length_maximum") ~ "millimeters",
+           measurementType == "mass_per_ind" ~ "grams",
+           measurementType %in% c("mass_per_cubic_meter", "mass_per_cubic_meter_corr") ~ "milligrams per cubic meter",
+           measurementType %in% c("ind_per_cubic_meter", "ind_per_cubic_meter_corr") ~ "individuals per cubic meter",
+           measurementType == "count" ~ "individuals"),
+    measurementUnitID = case_when(
+      measurementUnit == "millimeters" ~ "http://vocab.nerc.ac.uk/collection/P06/current/UXMM/",
+      measurementUnit == "milligrams per cubic meter" ~ "http://vocab.nerc.ac.uk/collection/P06/current/UMMC/",
+      measurementUnit == "grams" ~ "http://vocab.nerc.ac.uk/collection/P06/current/UGRM/",
+      measurementUnit == "individuals" ~ "http://vocab.nerc.ac.uk/collection/P06/current/UUUU/",
+      measurementUnit == "individuals per cubic meter" ~ "http://vocab.nerc.ac.uk/collection/P06/current/UPMM/"),
+    measurementValueID = case_when(
+      measurementValue == "CI/CII" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S112/",
+      measurementValue == "Nauplius" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1130/",
+      measurementValue == "furcilia" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1123/",
+      measurementValue == "veliger" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1193/",
+      measurementValue == "Larvae" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1128/",
+      measurementValue == "Eggs" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1122/",
+      measurementValue == "Caliptopis" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1118/")) %>%
+  select(eventID, occurrenceID, measurementID, measurementType, measurementTypeID,
+         measurementValue, measurementUnit, measurementUnitID)
+
+# Combine the two extended measurement or fact tables into a single core, re-order if preferred and save locally:
+juday2019_emof_fnl <- plyr::rbind.fill(juday_bottomdepth, juday2019_samplingEffort, juday2019_emof) 
+
+# If interested in re-ordering:
+order <- stringr::str_sort(juday2019_emof_fnl$measurementID)
+juday2019_emof_fnl <- juday2019_emof_fnl[match(order, juday2019_emof_fnl$measurementID),]
+juday2019_emof_fnl <- juday2019_emof_fnl %>% distinct(measurementID, .keep_all = TRUE)
+
+# Make sure the folder path exists already (e.g. ./Juday/tidy_data)
+write_csv(juday2019_emof_fnl, here("Juday", "tidy_data", "juday2019_emof.csv"))
+```
